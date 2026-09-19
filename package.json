@@ -1,0 +1,18 @@
+{
+  "name": "computemesh",
+  "version": "1.0.0",
+  "description": "Decentralized peer-to-peer compute sharing platform for Computer Networks",
+  "main": "peer/index.js",
+  "scripts": {
+    "start": "node peer/index.js"
+  },
+  "keywords": [
+    "computer-networks",
+    "p2p",
+    "distributed-computing",
+    "tcp",
+    "udp"
+  ],
+  "author": "",
+  "license": "ISC"
+}
