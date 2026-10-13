@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ComputeMesh — Decentralized P2P Compute Cluster</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/dashboard/style.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="dark-theme">
+  <div class="mesh-bg"></div>
+
+  <!-- Header -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="logo-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-title">Compute<span class="gradient-text">Mesh</span></span>
+        <span class="badge-tag">P2P v1.0</span>
+      </div>
+    </div>
+    <div class="nav-status">
+      <div class="status-indicator">
+        <span class="pulse-dot"></span>
+        <span id="cluster-status-text">Network Active</span>
+      </div>
+      <button class="btn btn-primary" id="btn-quick-job">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        Dispatch Compute Job
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container">
+    <!-- Top Stats Row -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-label">Active Peers</span>
+          <div class="stat-icon-wrap icon-cyan">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value" id="stat-peer-count">0</div>
+        <div class="stat-subtext" id="stat-peer-sub">Scanning UDP broadcast...</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-label">Total Jobs Managed</span>
+          <div class="stat-icon-wrap icon-purple">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value" id="stat-job-count">0</div>
+        <div class="stat-subtext" id="stat-job-sub">Completed: 0 | Running: 0</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-label">Cluster CPU Capacity</span>
+          <div class="stat-icon-wrap icon-amber">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+              <rect x="9" y="9" width="6" height="6"></rect>
+              <line x1="9" y1="1" x2="9" y2="4"></line>
+              <line x1="15" y1="1" x2="15" y2="4"></line>
+              <line x1="9" y1="20" x2="9" y2="23"></line>
+              <line x1="15" y1="20" x2="15" y2="23"></line>
+              <line x1="20" y1="9" x2="23" y2="9"></line>
+              <line x1="20" y1="14" x2="23" y2="14"></line>
+              <line x1="1" y1="9" x2="4" y2="9"></line>
+              <line x1="1" y1="14" x2="4" y2="14"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value" id="stat-cpu-cores">0 <span class="stat-unit">Cores</span></div>
+        <div class="stat-subtext" id="stat-ram-total">0 GB Aggregated Memory</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-label">Discovery Protocol</span>
+          <div class="stat-icon-wrap icon-emerald">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value text-emerald">UDP & TCP</div>
+        <div class="stat-subtext">Heartbeat: 3000ms ping interval</div>
+      </div>
+    </section>
+
+    <!-- Job Dispatch Panel Modal / Form -->
+    <div id="job-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Submit Parallel Compute Job</h3>
+          <button class="btn-close" id="btn-close-modal">&times;</button>
+        </div>
+        <form id="job-form">
+          <div class="form-group">
+            <label>Job Type</label>
+            <select id="input-job-type" class="form-control">
+              <option value="PRIME">Distributed Prime Calculation</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Range Start</label>
+              <input type="number" id="input-range-start" class="form-control" value="1" min="1" />
+            </div>
+            <div class="form-group">
+              <label>Range End</label>
+              <input type="number" id="input-range-end" class="form-control" value="100000" min="10" />
+            </div>
+            <div class="form-group">
+              <label>Task Slices</label>
+              <input type="number" id="input-tasks-count" class="form-control" value="4" min="1" max="64" />
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-submit-job">Execute on Mesh</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main Content Split -->
+    <div class="content-split">
+      <!-- Peer Mesh Table -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+            Connected Mesh Nodes
+          </div>
+          <span class="badge" id="badge-peer-count">0 Nodes</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Peer ID</th>
+                <th>Network Endpoint</th>
+                <th>Hardware Spec</th>
+                <th>Health / Status</th>
+                <th>Last Heartbeat</th>
+              </tr>
+            </thead>
+            <tbody id="peer-table-body">
+              <tr>
+                <td colspan="5" class="empty-state">
+                  <div class="loading-spinner"></div>
+                  <span>Discovering peers on network...</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Active / Completed Jobs -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            Job Distribution & Execution
+          </div>
+          <span class="badge" id="badge-job-count">0 Jobs</span>
+        </div>
+        <div class="jobs-list" id="jobs-container">
+          <div class="empty-state">
+            <span>No jobs submitted yet. Click <strong>Dispatch Compute Job</strong> to run work across the mesh.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Live System Telemetry / Event Log -->
+    <section class="panel log-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          Live Node Telemetry & Activity Stream
+        </div>
+        <button class="btn btn-sm" id="btn-clear-logs">Clear</button>
+      </div>
+      <div class="terminal-view" id="terminal-stream">
+        <div class="log-line info"><span class="log-time">[System]</span> Dashboard initialized. Polling cluster state every 1500ms...</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>ComputeMesh Decentralized P2P Infrastructure &bull; Peer-to-Peer Computing Platform</span>
+  </footer>
+
+  <script src="/dashboard/script.js"></script>
+  <script src="/script.js"></script>
+</body>
+</html>

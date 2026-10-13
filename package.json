@@ -4,7 +4,8 @@
   "description": "Decentralized peer-to-peer compute sharing platform for Computer Networks",
   "main": "peer/index.js",
   "scripts": {
-    "start": "node peer/index.js"
+    "start": "node peer/index.js",
+    "test": "node scripts/runTwoPeers.js"
   },
   "keywords": [
     "computer-networks",
