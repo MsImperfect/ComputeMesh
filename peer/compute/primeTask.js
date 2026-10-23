@@ -35,6 +35,27 @@ function isPrime(number) {
 // Calculate Primes in a Range
 // ========================================
 
+async function calculatePrimesAsync(start, end) {
+    const primes = [];
+    const CHUNK_SIZE = 10000;
+
+    for (
+        let number = start;
+        number <= end;
+        number++
+    ) {
+        if (isPrime(number)) {
+            primes.push(number);
+        }
+
+        if ((number - start) % CHUNK_SIZE === 0 && number !== start) {
+            await new Promise((resolve) => setImmediate(resolve));
+        }
+    }
+
+    return primes;
+}
+
 function calculatePrimes(start, end) {
     const primes = [];
 
@@ -56,7 +77,7 @@ function calculatePrimes(start, end) {
 // Execute Prime Task
 // ========================================
 
-function executePrimeTask(task) {
+async function executePrimeTask(task) {
     const startTime = Date.now();
 
     const start = Number(task.start);
@@ -77,7 +98,7 @@ function executePrimeTask(task) {
         );
     }
 
-    const primes = calculatePrimes(
+    const primes = await calculatePrimesAsync(
         start,
         end
     );
@@ -100,5 +121,6 @@ function executePrimeTask(task) {
 module.exports = {
     isPrime,
     calculatePrimes,
+    calculatePrimesAsync,
     executePrimeTask
 };

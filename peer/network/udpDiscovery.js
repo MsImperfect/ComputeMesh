@@ -4,71 +4,109 @@ const dgram = require("dgram");
 const DISCOVERY_PORT_START = 6001;
 const DISCOVERY_PORT_END = 6010;
 
-function startUDPDiscovery(peerInfo, peerTable) {
-    const socket = dgram.createSocket("udp4");
+function startUDPDiscovery(peerInfo, peerTable, onPeerFound = null) {
+    let currentSocket = null;
+    let periodicBroadcast = null;
 
-    socket.on("error", (error) => {
-        console.error(
-            `[UDP] Socket error: ${error.message}`
-        );
-    });
+    function attachSocketHandlers(socket) {
+        socket.on("message", (data, remoteInfo) => {
+            try {
+                const message = JSON.parse(data.toString());
 
-    socket.on("message", (data, remoteInfo) => {
-        try {
-            const message = JSON.parse(data.toString());
+                console.log(
+                    `[UDP] Received ${message.type} ` +
+                    `from ${remoteInfo.address}:${remoteInfo.port}`
+                );
 
-            console.log(
-                `[UDP] Received ${message.type} ` +
-                `from ${remoteInfo.address}:${remoteInfo.port}`
-            );
+                if (message.type === "DISCOVERY") {
+                    handleDiscovery(
+                        socket,
+                        peerInfo,
+                        peerTable,
+                        message,
+                        remoteInfo,
+                        onPeerFound
+                    );
+                }
 
-            if (message.type === "DISCOVERY") {
-                handleDiscovery(
-                    socket,
-                    peerInfo,
-                    peerTable,
-                    message,
-                    remoteInfo
+                if (message.type === "PEER_INFO") {
+                    handlePeerInfo(
+                        message,
+                        peerTable,
+                        remoteInfo,
+                        onPeerFound
+                    );
+                }
+
+            } catch (error) {
+                console.log(
+                    `[UDP] Invalid message: ${error.message}`
                 );
             }
+        });
+    }
 
-            if (message.type === "PEER_INFO") {
-                handlePeerInfo(
-                    message,
-                    peerTable
-                );
-            }
-
-        } catch (error) {
-            console.log(
-                `[UDP] Invalid message: ${error.message}`
-            );
-        }
-    });
-
-    // Attempt to bind to the desired UDP port; if it's already in use, try subsequent ports in the range.
+    // Attempt to bind to desired UDP port; if in use, close and create a new socket for the next port.
     const tryBind = (port) => {
+        const socket = dgram.createSocket("udp4");
+        currentSocket = socket;
+
         socket.once('error', (err) => {
+            try {
+                socket.close();
+            } catch (_) {}
+
             if (err.code === 'EADDRINUSE' && port < DISCOVERY_PORT_END) {
-                // Try next port
                 tryBind(port + 1);
             } else {
                 console.error(`[UDP] Failed to bind UDP socket: ${err.message}`);
             }
         });
+
         socket.once('listening', () => {
-            socket.setBroadcast(true);
+            socket.on('error', (error) => {
+                console.error(`[UDP] Socket runtime error: ${error.message}`);
+            });
+
+            attachSocketHandlers(socket);
+
+            try {
+                socket.setBroadcast(true);
+            } catch (err) {
+                console.warn(`[UDP] setBroadcast error: ${err.message}`);
+            }
+
             peerInfo.udpPort = port; // Update to actual bound port
+            if (peerTable) {
+                peerTable.addPeer(peerInfo, true);
+            }
+
             console.log(`[UDP] Discovery service listening on port ${port}`);
+
             setTimeout(() => {
                 broadcastDiscovery(socket, peerInfo);
             }, 500);
+
+            // Periodic discovery broadcast to handle packet drops and late joins
+            periodicBroadcast = setInterval(() => {
+                broadcastDiscovery(socket, peerInfo);
+            }, 10000);
         });
+
         socket.bind(port, "0.0.0.0");
     };
+
     tryBind(peerInfo.udpPort);
 
-    return socket;
+    return {
+        getSocket: () => currentSocket,
+        stop: () => {
+            if (periodicBroadcast) clearInterval(periodicBroadcast);
+            if (currentSocket) {
+                try { currentSocket.close(); } catch (_) {}
+            }
+        }
+    };
 }
 
 
@@ -126,7 +164,8 @@ function handleDiscovery(
     peerInfo,
     peerTable,
     message,
-    remoteInfo
+    remoteInfo,
+    onPeerFound = null
 ) {
     if (!message.peer) {
         return;
@@ -149,6 +188,10 @@ function handleDiscovery(
     console.log(
         `[UDP] Discovered peer ${discoveredPeer.peerId}`
     );
+
+    if (typeof onPeerFound === "function") {
+        onPeerFound(discoveredPeer);
+    }
 
     // Send our information directly back
     const response = {
@@ -192,13 +235,24 @@ function handleDiscovery(
 
 function handlePeerInfo(
     message,
-    peerTable
+    peerTable,
+    remoteInfo,
+    onPeerFound = null
 ) {
     if (!message.peer) {
         return;
     }
 
-    peerTable.addPeer(message.peer);
+    const peer = {
+        ...message.peer,
+        ipAddress: remoteInfo && remoteInfo.address ? remoteInfo.address : message.peer.ipAddress
+    };
+
+    peerTable.addPeer(peer);
+
+    if (typeof onPeerFound === "function") {
+        onPeerFound(peer);
+    }
 
     peerTable.printTable();
 }

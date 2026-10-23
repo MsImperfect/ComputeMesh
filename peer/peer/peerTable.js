@@ -4,12 +4,20 @@ class PeerTable {
         this.peers = new Map();
     }
 
-    addPeer(peerInfo) {
+    addPeer(peerInfo, allowSelf = false) {
         if (
             !peerInfo ||
-            peerInfo.peerId === this.localPeerId
+            (!allowSelf && peerInfo.peerId === this.localPeerId)
         ) {
             return;
+        }
+
+        // If a node restarted on the same ip + tcpPort with a new peerId, remove the stale peer record
+        for (const [id, existing] of this.peers.entries()) {
+            if (id !== peerInfo.peerId && existing.ipAddress === peerInfo.ipAddress && Number(existing.tcpPort) === Number(peerInfo.tcpPort)) {
+                this.peers.delete(id);
+                console.log(`[PEER TABLE] Replaced stale peer ${id} with updated ${peerInfo.peerId} on ${peerInfo.ipAddress}:${peerInfo.tcpPort}`);
+            }
         }
 
         const existingPeer =
@@ -45,6 +53,17 @@ class PeerTable {
         return Array.from(
             this.peers.values()
         );
+    }
+
+    getActivePeers(timeoutMs = 9000) {
+        const now = Date.now();
+        return Array.from(this.peers.values()).filter((peer) => {
+            if (!peer) return false;
+            const isOnline = (peer.status || "").toUpperCase() === "ONLINE";
+            if (!isOnline) return false;
+            if (peer.lastSeen && (now - peer.lastSeen) > timeoutMs) return false;
+            return true;
+        });
     }
 
     getPeerCount() {

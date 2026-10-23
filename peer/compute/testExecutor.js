@@ -9,14 +9,16 @@ const task = {
     end: 100
 };
 
-try {
-    const result = executeTask(task);
+(async () => {
+    try {
+        const result = await executeTask(task);
 
-    console.log("FINAL RESULT:");
-    console.log(result);
+        console.log("FINAL RESULT:");
+        console.log(result);
 
-} catch (error) {
-    console.error(
-        `Task failed: ${error.message}`
-    );
-}
+    } catch (error) {
+        console.error(
+            `Task failed: ${error.message}`
+        );
+    }
+})();

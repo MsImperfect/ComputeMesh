@@ -18,15 +18,22 @@ class JobManager {
 
         this.nextJobNumber++;
 
+        const range = (parameters.start !== undefined && parameters.end !== undefined)
+            ? { start: parameters.start, end: parameters.end }
+            : null;
+
         const job = {
             jobId,
             type,
             parameters,
+            range,
             status: "CREATED",
             createdAt: Date.now(),
             completedAt: null,
             taskIds: [],
             results: [],
+            result: null,
+            executionTimeMs: null,
             error: null
         };
 
@@ -94,7 +101,14 @@ class JobManager {
             return false;
         }
 
-        job.results.push(result);
+        if (result && result.taskId) {
+            const exists = job.results.some(r => r && r.taskId === result.taskId);
+            if (!exists) {
+                job.results.push(result);
+            }
+        } else {
+            job.results.push(result);
+        }
 
         return true;
     }

@@ -1,32 +1,39 @@
 const net = require("net");
 
-function sendTCPMessage(host, port, message) {
+function sendTCPMessage(host, port, message, timeoutMs = 30000) {
     return new Promise((resolve, reject) => {
         const socket = new net.Socket();
-
         let buffer = "";
+        let settled = false;
 
-        socket.setTimeout(5000);
+        const cleanupAndReject = (err) => {
+            if (!settled) {
+                settled = true;
+                socket.destroy();
+                reject(err);
+            }
+        };
+
+        const cleanupAndResolve = (value) => {
+            if (!settled) {
+                settled = true;
+                socket.end();
+                resolve(value);
+            }
+        };
+
+        socket.setTimeout(timeoutMs);
 
         socket.connect(port, host, () => {
-            console.log(
-                `[TCP] Connected to ${host}:${port}`
-            );
-
+            console.log(`[TCP] Connected to ${host}:${port}`);
             const data = JSON.stringify(message) + "\n";
-
-            console.log(
-                `[TCP] Sending: ${data.trim()}`
-            );
-
+            console.log(`[TCP] Sending: ${data.trim()}`);
             socket.write(data);
         });
 
         socket.on("data", (data) => {
             buffer += data.toString();
-
             const messages = buffer.split("\n");
-
             buffer = messages.pop();
 
             for (const rawMessage of messages) {
@@ -34,42 +41,38 @@ function sendTCPMessage(host, port, message) {
                     continue;
                 }
 
-                console.log(
-                    `[TCP] Response: ${rawMessage}`
-                );
+                console.log(`[TCP] Response: ${rawMessage}`);
 
                 try {
                     const response = JSON.parse(rawMessage);
-
-                    resolve(response);
-
-                    socket.end();
+                    cleanupAndResolve(response);
+                    return;
                 } catch (error) {
-                    reject(
-                        new Error(
-                            `Invalid TCP response: ${error.message}`
-                        )
+                    cleanupAndReject(
+                        new Error(`Invalid TCP response: ${error.message}`)
                     );
+                    return;
                 }
             }
         });
 
         socket.on("timeout", () => {
-            socket.destroy();
-
-            reject(
-                new Error(
-                    "TCP connection timed out after 5 seconds"
-                )
+            cleanupAndReject(
+                new Error(`TCP connection timed out after ${timeoutMs}ms`)
             );
         });
 
         socket.on("error", (error) => {
-            reject(error);
+            cleanupAndReject(error);
         });
 
         socket.on("close", () => {
             console.log("[TCP] Connection closed");
+            if (!settled) {
+                cleanupAndReject(
+                    new Error("TCP connection closed without response")
+                );
+            }
         });
     });
 }

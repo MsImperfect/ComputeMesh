@@ -30,7 +30,7 @@ function getResourceInfo() {
     };
 }
 
-function startResourceMonitor(peerInfo) {
+function startResourceMonitor(peerInfo, peerTable = null) {
     function updateResources() {
         const resources = getResourceInfo();
 
@@ -48,13 +48,17 @@ function startResourceMonitor(peerInfo) {
 
         peerInfo.memoryUsagePercent =
             resources.memoryUsagePercent;
+
+        if (peerTable) {
+            peerTable.addPeer(peerInfo, true);
+        }
     }
 
     // Initial resource information
     updateResources();
 
     // Refresh every 5 seconds
-    setInterval(() => {
+    const interval = setInterval(() => {
         updateResources();
     }, 5000);
 
@@ -63,7 +67,8 @@ function startResourceMonitor(peerInfo) {
     );
 
     return {
-        getResources: getResourceInfo
+        getResources: getResourceInfo,
+        stop: () => clearInterval(interval)
     };
 }
 

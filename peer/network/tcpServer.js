@@ -3,7 +3,8 @@ const net = require("net");
 function startTCPServer(
     peerId,
     port,
-    messageHandler
+    messageHandler,
+    onListening = null
 ) {
     const server = net.createServer((socket) => {
 
@@ -20,7 +21,7 @@ function startTCPServer(
 
         let buffer = "";
 
-        socket.on("data", (data) => {
+        socket.on("data", async (data) => {
 
             buffer += data.toString();
 
@@ -45,7 +46,7 @@ function startTCPServer(
                     const message =
                         JSON.parse(rawMessage);
 
-                    messageHandler(
+                    await messageHandler(
                         message,
                         socket
                     );
@@ -87,6 +88,20 @@ function startTCPServer(
         });
     });
 
+    server.once("error", (error) => {
+        if (error.code === "EADDRINUSE") {
+            console.warn(
+                `[TCP] Port ${port} is in use, retrying on port ${port + 1}...`
+            );
+            startTCPServer(peerId, port + 1, messageHandler, onListening);
+        } else {
+            console.error(
+                `[TCP] Server error: ` +
+                `${error.message}`
+            );
+        }
+    });
+
     server.listen(
         port,
         "0.0.0.0",
@@ -95,15 +110,11 @@ function startTCPServer(
                 `[TCP] ${peerId} listening ` +
                 `on port ${port}`
             );
+            if (typeof onListening === "function") {
+                onListening(port);
+            }
         }
     );
-
-    server.on("error", (error) => {
-        console.error(
-            `[TCP] Server error: ` +
-            `${error.message}`
-        );
-    });
 
     return server;
 }

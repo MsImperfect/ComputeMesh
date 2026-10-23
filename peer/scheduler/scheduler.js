@@ -24,7 +24,7 @@ class Scheduler {
     // Select Peer
     // ====================================
 
-    selectPeer(assignedPeerIds = []) {
+    selectPeer(peerBatchCounts = new Map()) {
         const eligiblePeers =
             this.getEligiblePeers();
 
@@ -32,29 +32,53 @@ class Scheduler {
             return null;
         }
 
-        // Prefer peers that do not already have
-        // a task assigned in this scheduling round.
-        const unusedPeers =
-            eligiblePeers.filter((peer) => {
-                return !assignedPeerIds.includes(
-                    peer.peerId
-                );
-            });
+        // Count existing active tasks across the system for each peer
+        const activeTasksByPeer = new Map();
+        if (this.taskManager) {
+            const allTasks = this.taskManager.getAllTasks();
+            for (const task of allTasks) {
+                if (
+                    (task.status === "ASSIGNED" || task.status === "RUNNING") &&
+                    task.assignedPeerId
+                ) {
+                    activeTasksByPeer.set(
+                        task.assignedPeerId,
+                        (activeTasksByPeer.get(task.assignedPeerId) || 0) + 1
+                    );
+                }
+            }
+        }
 
-        const candidates =
-            unusedPeers.length > 0
-                ? unusedPeers
-                : eligiblePeers;
+        // Sort candidates by total load (existing active tasks + current batch assignments),
+        // breaking ties with free memory (higher free memory first).
+        const candidates = [...eligiblePeers].sort((a, b) => {
+            const loadA =
+                (activeTasksByPeer.get(a.peerId) || 0) +
+                (peerBatchCounts.get(a.peerId) || 0);
 
-        // Select the peer with the most free memory.
-        candidates.sort((a, b) => {
+            const loadB =
+                (activeTasksByPeer.get(b.peerId) || 0) +
+                (peerBatchCounts.get(b.peerId) || 0);
+
+            if (loadA !== loadB) {
+                return loadA - loadB; // least loaded first
+            }
+
             return (
                 Number(b.freeMemoryGB || 0) -
                 Number(a.freeMemoryGB || 0)
             );
         });
 
-        return candidates[0];
+        const selected = candidates[0];
+        if (selected) {
+            peerBatchCounts.set(
+                selected.peerId,
+                (peerBatchCounts.get(selected.peerId) || 0) + 1
+            );
+        }
+
+        return selected;
     }
 
     // ====================================
@@ -63,8 +87,7 @@ class Scheduler {
 
     scheduleTasks(tasks) {
         const assignments = [];
-
-        const assignedPeerIds = [];
+        const peerBatchCounts = new Map();
 
         for (const task of tasks) {
 
@@ -74,7 +97,7 @@ class Scheduler {
 
             const peer =
                 this.selectPeer(
-                    assignedPeerIds
+                    peerBatchCounts
                 );
 
             if (!peer) {
@@ -93,10 +116,6 @@ class Scheduler {
                     assignedPeerId:
                         peer.peerId
                 }
-            );
-
-            assignedPeerIds.push(
-                peer.peerId
             );
 
             assignments.push({

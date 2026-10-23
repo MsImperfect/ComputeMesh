@@ -68,7 +68,7 @@ class JobController {
     // Run Prime Job
     // ========================================
 
-    async runPrimeJob(
+    createAndRunPrimeJob(
         start,
         end,
         taskCount
@@ -94,6 +94,120 @@ class JobController {
                 }
             );
 
+        const promise = this.dispatchPrimeJob(job);
+        return { job, promise };
+    }
+
+    async runPrimeJob(
+        start,
+        end,
+        taskCount
+    ) {
+        const { promise } = this.createAndRunPrimeJob(start, end, taskCount);
+        return await promise;
+    }
+
+    // ========================================
+    // Run Script & Data File Job
+    // ========================================
+
+    createAndRunScriptJob({
+        scriptName = "model.py",
+        scriptContent = "",
+        files = [],
+        args = [],
+        taskCount = 1,
+        runtime = null,
+        splitCsv = true
+    }) {
+        console.log("");
+        console.log(
+            "========================================"
+        );
+        console.log(
+            "       COMPUTEMESH SCRIPT JOB           "
+        );
+        console.log(
+            "========================================"
+        );
+
+        const job = this.jobManager.createJob(
+            "SCRIPT",
+            {
+                scriptName,
+                scriptContent,
+                files,
+                args,
+                taskCount,
+                runtime,
+                splitCsv
+            }
+        );
+
+        const promise = this.dispatchScriptJob(job);
+        return { job, promise };
+    }
+
+    async runScriptJob(options) {
+        const { promise } = this.createAndRunScriptJob(options);
+        return await promise;
+    }
+
+    async dispatchScriptJob(job) {
+        this.activeJobs.add(job.jobId);
+
+        this.jobManager.updateJobStatus(
+            job.jobId,
+            "SPLITTING"
+        );
+
+        const tasks = this.taskManager.splitScriptJob(job);
+
+        console.log(
+            `[JOB] ${job.jobId} partitioned into ${tasks.length} script tasks across mesh`
+        );
+
+        this.jobManager.updateJobStatus(
+            job.jobId,
+            "SCHEDULING"
+        );
+
+        const assignments = this.scheduler.scheduleTasks(tasks);
+        this.scheduler.printAssignments(assignments);
+
+        if (assignments.length === 0) {
+            this.jobManager.updateJobStatus(job.jobId, "FAILED");
+            this.activeJobs.delete(job.jobId);
+            throw new Error("No available workers found");
+        }
+
+        if (assignments.length < tasks.length) {
+            console.warn(
+                `[JOB] Warning: Only ${assignments.length} of ${tasks.length} tasks assigned; ` +
+                `remaining tasks will be scheduled as workers become available.`
+            );
+        }
+
+        this.jobManager.updateJobStatus(job.jobId, "RUNNING");
+        await this.distributor.distributeTasks(tasks, assignments);
+
+        const finalResult = this.resultAggregator.getJobResult(job.jobId);
+        if (finalResult) {
+            this.activeJobs.delete(job.jobId);
+            this.printFinalResult(finalResult);
+            return finalResult;
+        }
+
+        this.checkActiveJobs();
+
+        console.log(
+            `[JOB] ${job.jobId} is in progress or waiting for task completion/recovery`
+        );
+
+        return null;
+    }
+
+    async dispatchPrimeJob(job) {
         this.activeJobs.add(
             job.jobId
         );
@@ -152,6 +266,13 @@ class JobController {
             );
         }
 
+        if (assignments.length < tasks.length) {
+            console.warn(
+                `[JOB] Warning: Only ${assignments.length} of ${tasks.length} tasks assigned; ` +
+                `remaining tasks will be scheduled as workers become available.`
+            );
+        }
+
         // ====================================
         // Distribute
         // ====================================
@@ -188,9 +309,11 @@ class JobController {
             return finalResult;
         }
 
+        this.checkActiveJobs();
+
         console.log(
-            `[JOB] ${job.jobId} is still ` +
-            `waiting for task recovery`
+            `[JOB] ${job.jobId} is in progress ` +
+            `or waiting for task completion/recovery`
         );
 
         return null;
@@ -248,30 +371,74 @@ class JobController {
     }
 
     // ========================================
+    // Retry Pending Tasks (e.g. on peer join)
+    // ========================================
+
+    async retryPendingTasks() {
+        for (const jobId of Array.from(this.activeJobs)) {
+            const job = this.jobManager.getJob(jobId);
+            if (!job || job.status === "COMPLETED" || job.status === "FAILED") {
+                continue;
+            }
+
+            const pendingTasks = job.taskIds
+                .map((tid) => this.taskManager.getTask(tid))
+                .filter((t) => t && t.status === "PENDING");
+
+            if (pendingTasks.length > 0) {
+                console.log(
+                    `[JOB] Retrying ${pendingTasks.length} pending task(s) for ${jobId}`
+                );
+
+                const assignments = this.scheduler.scheduleTasks(pendingTasks);
+                if (assignments.length > 0) {
+                    await this.distributor.distributeTasks(
+                        pendingTasks,
+                        assignments
+                    );
+                    this.checkActiveJobs();
+                }
+            }
+        }
+    }
+
+    // ========================================
     // Check Active Jobs
     // ========================================
 
     checkActiveJobs() {
         for (
             const jobId
-            of this.activeJobs
+            of Array.from(this.activeJobs)
         ) {
             const finalResult =
                 this.resultAggregator.getJobResult(
                     jobId
                 );
 
-            if (!finalResult) {
+            if (finalResult) {
+                this.activeJobs.delete(
+                    jobId
+                );
+
+                this.printFinalResult(
+                    finalResult
+                );
                 continue;
             }
 
-            this.activeJobs.delete(
-                jobId
-            );
+            const job = this.jobManager.getJob(jobId);
+            if (!job) continue;
 
-            this.printFinalResult(
-                finalResult
-            );
+            const allTasks = job.taskIds.map(tid => this.taskManager.getTask(tid));
+            const hasFailed = allTasks.some(t => t && t.status === "FAILED");
+            const allFinished = allTasks.every(t => t && (t.status === "COMPLETED" || t.status === "FAILED"));
+
+            if (allFinished && hasFailed) {
+                this.jobManager.updateJobStatus(jobId, "FAILED");
+                this.activeJobs.delete(jobId);
+                console.error(`[JOB] ${jobId} failed: one or more tasks failed permanently.`);
+            }
         }
     }
 
@@ -310,10 +477,22 @@ class JobController {
             `${finalResult.completedTaskCount}`
         );
 
-        console.log(
-            `Prime Count:        ` +
-            `${finalResult.primeCount}`
-        );
+        if (finalResult.type === "PRIME") {
+            console.log(
+                `Prime Count:        ` +
+                `${finalResult.primeCount}`
+            );
+        } else if (finalResult.type === "SCRIPT") {
+            console.log(
+                `Script:             ` +
+                `${finalResult.scriptName || "-"}`
+            );
+            const outStr = JSON.stringify(finalResult.combinedOutput);
+            console.log(
+                `Result:             ` +
+                `${outStr && outStr.length > 80 ? outStr.substring(0, 80) + '...' : outStr}`
+            );
+        }
 
         console.log(
             `Execution Time:     ` +

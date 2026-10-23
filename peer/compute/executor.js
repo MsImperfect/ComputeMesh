@@ -6,12 +6,16 @@ const {
     executePrimeTask
 } = require("./primeTask");
 
+const {
+    executeScriptTask
+} = require("./scriptTask");
+
 
 // ========================================
 // Execute Task
 // ========================================
 
-function executeTask(task) {
+async function executeTask(task) {
     if (!task) {
         throw new Error(
             "Cannot execute an empty task"
@@ -49,13 +53,21 @@ function executeTask(task) {
         `Task Type:      ${task.type}`
     );
 
-    console.log(
-        `Start:          ${task.start ?? "-"}`
-    );
-
-    console.log(
-        `End:            ${task.end ?? "-"}`
-    );
+    if (task.type === "PRIME") {
+        console.log(
+            `Start:          ${task.start ?? "-"}`
+        );
+        console.log(
+            `End:            ${task.end ?? "-"}`
+        );
+    } else if (task.type === "SCRIPT") {
+        console.log(
+            `Script:         ${task.scriptName || "-"}`
+        );
+        console.log(
+            `Files:          ${Array.isArray(task.files) ? task.files.map(f => f.name).join(", ") : "-"}`
+        );
+    }
 
     console.log(
         "----------------------------------------"
@@ -68,7 +80,11 @@ function executeTask(task) {
     switch (task.type) {
 
         case "PRIME":
-            result = executePrimeTask(task);
+            result = await executePrimeTask(task);
+            break;
+
+        case "SCRIPT":
+            result = await executeScriptTask(task);
             break;
 
         default:

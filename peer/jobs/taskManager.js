@@ -156,6 +156,115 @@ class TaskManager {
     }
 
     // ====================================
+    // Split Script Job (with CSV partition support)
+    // ====================================
+
+    splitScriptJob(job) {
+        const scriptName = job.parameters.scriptName || "model.py";
+        const scriptContent = job.parameters.scriptContent || "";
+        const files = Array.isArray(job.parameters.files) ? job.parameters.files : [];
+        const taskCount = Math.max(1, Number(job.parameters.taskCount) || 1);
+        const splitCsv = job.parameters.splitCsv !== false;
+
+        // Check if there is a CSV file to partition across workers
+        const getFileName = f => (f && (f.filename || f.name)) || "";
+        const csvFile = files.find(f => getFileName(f).toLowerCase().endsWith(".csv"));
+        const csvFileName = csvFile ? getFileName(csvFile) : "data.csv";
+
+        if (!csvFile || taskCount <= 1 || !splitCsv) {
+            // No CSV splitting, create taskCount tasks with full files
+            const tasks = [];
+            for (let i = 0; i < taskCount; i++) {
+                const task = this.createTask(
+                    job.jobId,
+                    "SCRIPT",
+                    {
+                        scriptName,
+                        scriptContent,
+                        entrypoint: job.parameters.entrypoint || scriptName,
+                        runtime: job.parameters.runtime,
+                        args: job.parameters.args || (files.length > 0 ? [getFileName(files[0])] : []),
+                        files,
+                        taskIndex: i,
+                        sliceIndex: i,
+                        taskCount,
+                        totalSlices: taskCount
+                    }
+                );
+                tasks.push(task);
+            }
+            return tasks;
+        }
+
+        // Split CSV file rows across tasks while preserving the header on every chunk
+        const rawCsv = csvFile.content || "";
+        const allLines = rawCsv.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (allLines.length <= 1) {
+            // Only header or empty
+            const task = this.createTask(job.jobId, "SCRIPT", {
+                scriptName,
+                scriptContent,
+                entrypoint: job.parameters.entrypoint || scriptName,
+                runtime: job.parameters.runtime,
+                args: job.parameters.args || [csvFileName],
+                files,
+                taskIndex: 0,
+                sliceIndex: 0,
+                taskCount: 1,
+                totalSlices: 1
+            });
+            return [task];
+        }
+
+        const header = allLines[0];
+        const dataRows = allLines.slice(1);
+        const actualTaskCount = Math.min(taskCount, dataRows.length);
+        const baseSize = Math.floor(dataRows.length / actualTaskCount);
+        const remainder = dataRows.length % actualTaskCount;
+
+        const tasks = [];
+        let currentRow = 0;
+
+        for (let i = 0; i < actualTaskCount; i++) {
+            const extra = i < remainder ? 1 : 0;
+            const currentSize = baseSize + extra;
+            const chunkRows = dataRows.slice(currentRow, currentRow + currentSize);
+            currentRow += currentSize;
+
+            const chunkCsvContent = [header, ...chunkRows].join("\n");
+
+            // Clone files and replace the CSV file with this task's partition
+            const taskFiles = files.map(f => {
+                if (getFileName(f) === csvFileName) {
+                    return { ...f, filename: csvFileName, name: csvFileName, content: chunkCsvContent, rowCount: chunkRows.length };
+                }
+                return f;
+            });
+
+            const task = this.createTask(
+                job.jobId,
+                "SCRIPT",
+                {
+                    scriptName,
+                    scriptContent,
+                    entrypoint: job.parameters.entrypoint || scriptName,
+                    runtime: job.parameters.runtime,
+                    args: job.parameters.args || [csvFileName],
+                    files: taskFiles,
+                    taskIndex: i,
+                    sliceIndex: i,
+                    taskCount: actualTaskCount,
+                    totalSlices: actualTaskCount,
+                    rowCount: chunkRows.length
+                }
+            );
+            tasks.push(task);
+        }
+
+        return tasks;
+    }
+
+    // ====================================
     // Get Task
     // ====================================
 

@@ -5,7 +5,11 @@
   "main": "peer/index.js",
   "scripts": {
     "start": "node peer/index.js",
-    "test": "node scripts/runTwoPeers.js"
+    "test": "node tests/unitTests.js && node tests/scriptTaskTest.js && node tests/recoveryIntegrationTest.js && node scripts/runTwoPeers.js",
+    "test:unit": "node tests/unitTests.js",
+    "test:script": "node tests/scriptTaskTest.js",
+    "test:script-network": "node tests/twoPeersScriptIntegrationTest.js",
+    "test:recovery": "node tests/recoveryIntegrationTest.js"
   },
   "keywords": [
     "computer-networks",

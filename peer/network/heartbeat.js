@@ -10,70 +10,92 @@ function startHeartbeat(
     peerTable,
     offlineHandler = null
 ) {
-    const socket = dgram.createSocket("udp4");
+    let currentSocket = null;
+    let heartbeatInterval = null;
+    let timeoutInterval = null;
 
-    const heartbeatPort =
-        peerInfo.udpPort + HEARTBEAT_PORT_OFFSET;
+    const initialHeartbeatPort =
+        peerInfo.heartbeatPort || (peerInfo.udpPort + HEARTBEAT_PORT_OFFSET);
 
-    socket.on("error", (error) => {
-        console.error(
-            `[HEARTBEAT] Socket error: ${error.message}`
-        );
-    });
+    const tryBindHeartbeat = (port) => {
+        const socket = dgram.createSocket("udp4");
+        currentSocket = socket;
 
-    socket.on("message", (data, remoteInfo) => {
-        try {
-            const message = JSON.parse(
-                data.toString()
-            );
+        socket.once("error", (error) => {
+            try {
+                socket.close();
+            } catch (_) {}
 
-            if (message.type !== "HEARTBEAT") {
-                return;
+            if (error.code === "EADDRINUSE" && port < initialHeartbeatPort + 50) {
+                tryBindHeartbeat(port + 1);
+            } else {
+                console.error(
+                    `[HEARTBEAT] Socket error: ${error.message}`
+                );
+            }
+        });
+
+        socket.once("listening", () => {
+            peerInfo.heartbeatPort = port;
+            if (peerTable) {
+                peerTable.addPeer(peerInfo, true);
             }
 
-            if (!message.peer) {
-                return;
-            }
-
-            if (
-                message.peer.peerId ===
-                peerInfo.peerId
-            ) {
-                return;
-            }
-
-            const receivedPeer = {
-                ...message.peer,
-                ipAddress: remoteInfo.address
-            };
-
-            peerTable.addPeer(
-                receivedPeer
-            );
-
             console.log(
-                `[HEARTBEAT] Received from ` +
-                `${receivedPeer.peerId}`
+                `[HEARTBEAT] Service started on UDP ${port}`
             );
 
-        } catch (error) {
-            console.log(
-                `[HEARTBEAT] Invalid message: ` +
-                `${error.message}`
-            );
-        }
-    });
+            socket.on("error", (error) => {
+                console.error(
+                    `[HEARTBEAT] Runtime error: ${error.message}`
+                );
+            });
 
-    socket.bind(
-        heartbeatPort,
-        "0.0.0.0",
-        () => {
-            console.log(
-                `[HEARTBEAT] Service started ` +
-                `on UDP ${heartbeatPort}`
-            );
+            socket.on("message", (data, remoteInfo) => {
+                try {
+                    const message = JSON.parse(
+                        data.toString()
+                    );
 
-            setInterval(() => {
+                    if (message.type !== "HEARTBEAT") {
+                        return;
+                    }
+
+                    if (!message.peer) {
+                        return;
+                    }
+
+                    if (
+                        message.peer.peerId ===
+                        peerInfo.peerId
+                    ) {
+                        return;
+                    }
+
+                    const receivedPeer = {
+                        ...message.peer,
+                        ipAddress: remoteInfo.address,
+                        heartbeatPort: message.peer.heartbeatPort || (message.peer.udpPort + HEARTBEAT_PORT_OFFSET)
+                    };
+
+                    peerTable.addPeer(
+                        receivedPeer
+                    );
+
+                    console.log(
+                        `[HEARTBEAT] Received from ` +
+                        `${receivedPeer.peerId}`
+                    );
+
+                } catch (error) {
+                    console.log(
+                        `[HEARTBEAT] Invalid message: ` +
+                        `${error.message}`
+                    );
+                }
+            });
+
+            heartbeatInterval = setInterval(() => {
                 sendHeartbeats(
                     socket,
                     peerInfo,
@@ -81,16 +103,29 @@ function startHeartbeat(
                 );
             }, HEARTBEAT_INTERVAL);
 
-            setInterval(() => {
+            timeoutInterval = setInterval(() => {
                 checkPeerTimeouts(
                     peerTable,
                     offlineHandler
                 );
             }, HEARTBEAT_INTERVAL);
-        }
-    );
+        });
 
-    return socket;
+        socket.bind(port, "0.0.0.0");
+    };
+
+    tryBindHeartbeat(initialHeartbeatPort);
+
+    return {
+        getSocket: () => currentSocket,
+        stop: () => {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (timeoutInterval) clearInterval(timeoutInterval);
+            if (currentSocket) {
+                try { currentSocket.close(); } catch (_) {}
+            }
+        }
+    };
 }
 
 
@@ -123,6 +158,10 @@ function sendHeartbeats(
 
     for (const peer of peers) {
 
+        if (peer.peerId === peerInfo.peerId) {
+            continue;
+        }
+
         // Don't send heartbeats to peers
         // already known to be offline.
         if (peer.status !== "ONLINE") {
@@ -130,8 +169,8 @@ function sendHeartbeats(
         }
 
         const targetHeartbeatPort =
-            peer.udpPort +
-            HEARTBEAT_PORT_OFFSET;
+            peer.heartbeatPort ||
+            (peer.udpPort + HEARTBEAT_PORT_OFFSET);
 
         socket.send(
             data,
@@ -167,6 +206,9 @@ function checkPeerTimeouts(
         peerTable.getAllPeers();
 
     for (const peer of peers) {
+        if (peer.peerId === peerTable.localPeerId) {
+            continue;
+        }
 
         const timeSinceLastSeen =
             now - peer.lastSeen;
@@ -208,6 +250,9 @@ function checkPeerTimeouts(
                         peer.peerId
                     );
                 }
+
+                // Remove disconnected peer from active table
+                peerTable.removePeer(peer.peerId);
             }
         }
     }

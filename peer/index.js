@@ -104,6 +104,8 @@ function getSystemInfo() {
 // ========================================
 
 const localIP =
+    process.env.PEER_IP ||
+    process.env.LOCAL_IP ||
     getLocalIP();
 
 const systemInfo =
@@ -138,7 +140,7 @@ const peerInfo = {
 const peerTable =
     new PeerTable(PEER_ID);
 // Register self in the peer table so we can assign tasks locally
-peerTable.addPeer(peerInfo);
+peerTable.addPeer(peerInfo, true);
 
 // ========================================
 // Job Controller
@@ -153,7 +155,7 @@ const jobController =
 // TCP Message Handler
 // ========================================
 
-function handleTCPMessage(
+async function handleTCPMessage(
     message,
     socket
 ) {
@@ -226,7 +228,7 @@ function handleTCPMessage(
             );
 
             const result =
-                executeTask(
+                await executeTask(
                     message.task
                 );
 
@@ -299,7 +301,11 @@ function handleTCPMessage(
 startTCPServer(
     PEER_ID,
     TCP_PORT,
-    handleTCPMessage
+    handleTCPMessage,
+    (boundPort) => {
+        peerInfo.tcpPort = boundPort;
+        peerTable.addPeer(peerInfo, true);
+    }
 );
 
 // ========================================
@@ -307,7 +313,8 @@ startTCPServer(
 // ========================================
 
 startResourceMonitor(
-    peerInfo
+    peerInfo,
+    peerTable
 );
 
 // ========================================
@@ -316,7 +323,12 @@ startResourceMonitor(
 
 startUDPDiscovery(
     peerInfo,
-    peerTable
+    peerTable,
+    () => {
+        jobController.retryPendingTasks().catch((err) => {
+            console.error(`[JOB] Failed to retry pending tasks: ${err.message}`);
+        });
+    }
 );
 
 // ========================================
@@ -344,9 +356,10 @@ const httpApp = express();
 const HTTP_PORT = Number(process.env.HTTP_PORT) || 3000;
 const dashboardDir = path.join(__dirname, '..', 'dashboard');
 
-httpApp.use(express.json());
+httpApp.use(express.json({ limit: '50mb' }));
+httpApp.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Expose status endpoint (including local node + discovered peers)
+// Expose status endpoint (only actual active peers connected on the same network)
 httpApp.get('/status', (req, res) => {
     const jobs = jobController.getAllJobs();
     const selfNode = {
@@ -356,18 +369,71 @@ httpApp.get('/status', (req, res) => {
         status: "ONLINE",
         lastSeen: Date.now()
     };
-    const peers = [selfNode, ...peerTable.getAllPeers()];
+    // Only return actual active peers currently connected on network
+    const activePeers = peerTable.getActivePeers();
+    const otherActivePeers = activePeers.filter(p => p.peerId !== peerInfo.peerId);
+    const peers = [selfNode, ...otherActivePeers];
     res.json({ peers, jobs, selfNode });
 });
 
-// API endpoint to submit a job from dashboard
+// API endpoint to submit a prime compute job
 httpApp.post('/api/submit-job', (req, res) => {
     try {
         const { rangeStart = 1, rangeEnd = 100000, tasksCount = 4 } = req.body || {};
-        jobController.runPrimeJob(Number(rangeStart), Number(rangeEnd), Number(tasksCount)).catch(err => {
+        const { job, promise } = jobController.createAndRunPrimeJob(
+            Number(rangeStart),
+            Number(rangeEnd),
+            Number(tasksCount)
+        );
+        promise.catch((err) => {
             console.error(`[JOB-ERROR] ${err.message}`);
         });
-        res.json({ success: true, message: 'Prime compute job dispatched to mesh' });
+        res.json({
+            success: true,
+            jobId: job.jobId,
+            message: 'Prime compute job dispatched to mesh'
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// API endpoint to submit an arbitrary script & data file job (e.g. model.py with data.csv)
+httpApp.post('/api/submit-script-job', (req, res) => {
+    try {
+        const {
+            scriptName = "model.py",
+            scriptContent = "",
+            files = [],
+            args = [],
+            taskCount = 1,
+            runtime = null,
+            splitCsv = true
+        } = req.body || {};
+
+        if (!scriptContent || !scriptContent.trim()) {
+            return res.status(400).json({ success: false, error: "scriptContent is required" });
+        }
+
+        const { job, promise } = jobController.createAndRunScriptJob({
+            scriptName,
+            scriptContent,
+            files,
+            args,
+            taskCount: Number(taskCount) || 1,
+            runtime,
+            splitCsv
+        });
+
+        promise.catch((err) => {
+            console.error(`[SCRIPT-JOB-ERROR] ${err.message}`);
+        });
+
+        res.json({
+            success: true,
+            jobId: job.jobId,
+            message: `Script job ${job.jobId} (${scriptName}) dispatched across mesh`
+        });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -440,9 +506,16 @@ console.log(
 );
 
 console.log("");
-// Start HTTP server
-httpApp.listen(HTTP_PORT, () => {
+// Start HTTP server with EADDRINUSE resilience
+const httpServer = httpApp.listen(HTTP_PORT, () => {
     console.log(`[HTTP] Status server listening on port ${HTTP_PORT}`);
+});
+httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.warn(`[HTTP] Port ${HTTP_PORT} is in use; dashboard HTTP skipped for this secondary peer.`);
+    } else {
+        console.error(`[HTTP] Server error: ${err.message}`);
+    }
 });
 
 // ========================================

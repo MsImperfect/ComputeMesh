@@ -2,6 +2,8 @@
 // ComputeMesh Task Recovery
 // ========================================
 
+const MAX_TASK_RETRIES = 3;
+
 class TaskRecovery {
     constructor(
         peerTable,
@@ -56,33 +58,58 @@ class TaskRecovery {
             `${failedTasks.length} unfinished task(s)`
         );
 
+        const recoverableTasks = [];
+
         for (const task of failedTasks) {
+            if ((task.retryCount || 0) >= MAX_TASK_RETRIES) {
+                this.taskManager.updateTask(
+                    task.taskId,
+                    {
+                        status: "FAILED",
+                        assignedPeerId: null,
+                        startedAt: null,
+                        error: `Exceeded max retries (${MAX_TASK_RETRIES}) after worker ${peerId} went offline`
+                    }
+                );
 
-            task.retryCount++;
+                console.error(
+                    `[RECOVERY] ${task.taskId} marked FAILED (exceeded ${MAX_TASK_RETRIES} retries)`
+                );
+            } else {
+                const newRetryCount = (task.retryCount || 0) + 1;
+                task.retryCount = newRetryCount;
 
-            this.taskManager.updateTask(
-                task.taskId,
-                {
-                    status: "PENDING",
-                    assignedPeerId: null,
-                    startedAt: null,
-                    error:
-                        `Worker ${peerId} went offline`
-                }
-            );
+                this.taskManager.updateTask(
+                    task.taskId,
+                    {
+                        status: "PENDING",
+                        assignedPeerId: null,
+                        startedAt: null,
+                        retryCount: newRetryCount,
+                        error: `Worker ${peerId} went offline`
+                    }
+                );
 
-            console.log(
-                `[RECOVERY] ${task.taskId} ` +
-                `reset to PENDING ` +
-                `(retry ${task.retryCount})`
-            );
+                console.log(
+                    `[RECOVERY] ${task.taskId} ` +
+                    `reset to PENDING ` +
+                    `(retry ${newRetryCount}/${MAX_TASK_RETRIES})`
+                );
+
+                recoverableTasks.push(task);
+            }
         }
 
-        return failedTasks;
+        return recoverableTasks;
     }
 
     async redistributeTasks(tasks) {
         if (!tasks || tasks.length === 0) {
+            return [];
+        }
+
+        const pendingTasks = tasks.filter(t => t.status === "PENDING");
+        if (pendingTasks.length === 0) {
             return [];
         }
 
@@ -99,12 +126,12 @@ class TaskRecovery {
 
         const assignments =
             this.scheduler.scheduleTasks(
-                tasks
+                pendingTasks
             );
 
         if (assignments.length === 0) {
             console.log(
-                "[RECOVERY] No replacement workers available"
+                "[RECOVERY] No replacement workers available right now; tasks remain PENDING"
             );
 
             return [];
@@ -116,7 +143,7 @@ class TaskRecovery {
 
         const results =
             await this.distributor.distributeTasks(
-                tasks,
+                pendingTasks,
                 assignments
             );
 
@@ -125,5 +152,7 @@ class TaskRecovery {
 }
 
 module.exports = {
-    TaskRecovery
+    TaskRecovery,
+    MAX_TASK_RETRIES
 };
+
