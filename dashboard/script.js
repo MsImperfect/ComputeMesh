@@ -454,10 +454,15 @@ function renderJobs(jobs) {
           const stdoutText = t.stdout ? escapeHtml(t.stdout) : '(No stdout output)';
           const outputDataStr = t.outputData ? `<div style="margin-top: 4px; color: #a5b4fc;">Output Data: <code>${escapeHtml(JSON.stringify(t.outputData))}</code></div>` : '';
 
+          const isRemoteWorker = t.assignedTo && !t.assignedTo.includes('Local') && !t.assignedTo.includes('local') && t.assignedTo !== 'local';
+          const workerLabel = isRemoteWorker
+            ? `<span style="color: #38bdf8; font-weight: 600;">Remote Peer (${escapeHtml(t.assignedTo)})</span>`
+            : `<span style="color: #c084fc; font-weight: 600;">Local Node (${escapeHtml(t.assignedTo || 'Local')})</span>`;
+
           return `
             <div class="script-task-item">
               <div class="script-task-header">
-                <span>Slice <strong>${sliceNum}/${totalSlices}</strong> &bull; Worker: <strong>${escapeHtml(t.assignedTo || 'local')}</strong></span>
+                <span>Slice <strong>${sliceNum}/${totalSlices}</strong> &bull; Worker: ${workerLabel}</span>
                 <span class="status-badge ${t.exitCode === 0 ? 'active' : 'busy'}">Exit ${t.exitCode !== undefined ? t.exitCode : 0} &bull; ${t.executionTimeMs || 0}ms</span>
               </div>
               ${outputDataStr}

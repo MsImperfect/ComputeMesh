@@ -23,6 +23,7 @@ const peerA = {
   PEER_ID: 'P-A',
   TCP_PORT: '5001',
   UDP_PORT: '6001',
+  ALLOW_SAME_HOST_PEERS: 'true',
   RUN_JOB: 'true', // trigger job on this peer after delay
 };
 
@@ -30,6 +31,7 @@ const peerB = {
   PEER_ID: 'P-B',
   TCP_PORT: '5002',
   UDP_PORT: '6002',
+  ALLOW_SAME_HOST_PEERS: 'true',
 };
 
 console.log('Launching Peer A...');

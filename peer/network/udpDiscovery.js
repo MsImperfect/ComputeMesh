@@ -171,9 +171,12 @@ function handleDiscovery(
         return;
     }
 
-    // Ignore our own discovery packet
+    // Ignore our own discovery packet or packets from the same physical machine
+    const allowSameHost = process.env.ALLOW_SAME_HOST_PEERS === "true";
+    const isSameHost = (remoteInfo.address === peerInfo.ipAddress || remoteInfo.address === "127.0.0.1");
     if (
-        message.peer.peerId === peerInfo.peerId
+        message.peer.peerId === peerInfo.peerId ||
+        (!allowSameHost && isSameHost)
     ) {
         return;
     }
@@ -243,9 +246,16 @@ function handlePeerInfo(
         return;
     }
 
+    const allowSameHost = process.env.ALLOW_SAME_HOST_PEERS === "true";
+    const remoteIp = remoteInfo && remoteInfo.address ? remoteInfo.address : message.peer.ipAddress;
+    const isSameHost = (peerTable.localIP && (remoteIp === peerTable.localIP || remoteIp === "127.0.0.1"));
+    if (!allowSameHost && isSameHost) {
+        return;
+    }
+
     const peer = {
         ...message.peer,
-        ipAddress: remoteInfo && remoteInfo.address ? remoteInfo.address : message.peer.ipAddress
+        ipAddress: remoteIp
     };
 
     peerTable.addPeer(peer);

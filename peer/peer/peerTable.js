@@ -1,15 +1,25 @@
 class PeerTable {
-    constructor(localPeerId) {
+    constructor(localPeerId, localIP = null) {
         this.localPeerId = localPeerId;
+        this.localIP = localIP;
         this.peers = new Map();
     }
 
     addPeer(peerInfo, allowSelf = false) {
-        if (
-            !peerInfo ||
-            (!allowSelf && peerInfo.peerId === this.localPeerId)
-        ) {
+        if (!peerInfo) {
             return;
+        }
+
+        if (!allowSelf && peerInfo.peerId === this.localPeerId) {
+            return;
+        }
+
+        // Prevent false connections: ignore pseudo peers from the same physical machine
+        const allowSameHost = process.env.ALLOW_SAME_HOST_PEERS === "true";
+        if (!allowSelf && !allowSameHost && this.localIP) {
+            if (peerInfo.ipAddress === this.localIP || peerInfo.ipAddress === "127.0.0.1" || peerInfo.ipAddress === "localhost") {
+                return;
+            }
         }
 
         // If a node restarted on the same ip + tcpPort with a new peerId, remove the stale peer record

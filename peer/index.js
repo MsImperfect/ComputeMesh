@@ -138,7 +138,7 @@ const peerInfo = {
 // ========================================
 
 const peerTable =
-    new PeerTable(PEER_ID);
+    new PeerTable(PEER_ID, localIP);
 // Register self in the peer table so we can assign tasks locally
 peerTable.addPeer(peerInfo, true);
 

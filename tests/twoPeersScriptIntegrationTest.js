@@ -87,6 +87,7 @@ async function run() {
             PORT: "5010",
             UDP_PORT: "6010",
             HTTP_PORT: "3010",
+            ALLOW_SAME_HOST_PEERS: "true",
             HEARTBEAT_INTERVAL: "1000",
             DISCOVERY_INTERVAL: "1500"
         },
@@ -100,6 +101,7 @@ async function run() {
             PORT: "5011",
             UDP_PORT: "6011",
             HTTP_PORT: "3011",
+            ALLOW_SAME_HOST_PEERS: "true",
             HEARTBEAT_INTERVAL: "1000",
             DISCOVERY_INTERVAL: "1500"
         },

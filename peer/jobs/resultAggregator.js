@@ -190,16 +190,29 @@ class ResultAggregator {
             0
         );
 
-        const outputs = taskResults.map((r) => ({
-            taskId: r.taskId,
-            scriptName: r.scriptName,
-            exitCode: r.exitCode,
-            stdout: r.stdout,
-            stderr: r.stderr,
-            output: r.output,
-            generatedFiles: r.generatedFiles || [],
-            executionTimeMs: r.executionTimeMs
-        }));
+        const outputs = taskResults.map((r) => {
+            const taskObj = this.taskManager ? this.taskManager.getTask(r.taskId) : null;
+            const assignedTo = r.assignedTo || r.peerId || (taskObj && taskObj.assignedPeerId) || "Local Node";
+            const sliceIndex = (taskObj && taskObj.sliceIndex !== undefined) ? taskObj.sliceIndex : (r.sliceIndex !== undefined ? r.sliceIndex : 0);
+            const totalSlices = (taskObj && taskObj.totalSlices) || r.totalSlices || taskResults.length;
+
+            return {
+                taskId: r.taskId,
+                assignedTo,
+                peerId: assignedTo,
+                workerIp: r.workerIp || (taskObj && taskObj.workerIp) || null,
+                sliceIndex,
+                totalSlices,
+                scriptName: r.scriptName,
+                exitCode: r.exitCode,
+                stdout: r.stdout,
+                stderr: r.stderr,
+                output: r.output,
+                outputData: r.outputData || r.output,
+                generatedFiles: r.generatedFiles || [],
+                executionTimeMs: r.executionTimeMs
+            };
+        });
 
         let combinedData = null;
         const allOutputsAreArrays = outputs.length > 0 && outputs.every(o => Array.isArray(o.output));

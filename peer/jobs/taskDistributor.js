@@ -64,8 +64,14 @@ class TaskDistributor {
             try {
                 const response = await sendTCPMessage(peerInfo.ipAddress, peerInfo.tcpPort, message);
                 if (response && response.type === MESSAGE_TYPES.TASK_RESULT) {
-                    this.resultAggregator.addTaskResult(taskId, response.result);
-                    return response.result;
+                    const enrichedResult = {
+                        ...response.result,
+                        peerId: response.peerId || peerId,
+                        assignedTo: response.peerId || peerId,
+                        workerIp: peerInfo.ipAddress
+                    };
+                    this.resultAggregator.addTaskResult(taskId, enrichedResult);
+                    return enrichedResult;
                 } else {
                     const errMsg = (response && response.message) || `Unexpected response (${response ? response.type : 'none'})`;
                     console.error(`[DISTRIBUTOR] Error response for task ${taskId} from ${peerId}: ${errMsg}`);

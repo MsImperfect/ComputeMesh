@@ -64,6 +64,13 @@ class Scheduler {
                 return loadA - loadB; // least loaded first
             }
 
+            // If loads are equal, prefer offloading tasks to external network peers before local node
+            const aIsSelf = a.isSelf || a.peerId === this.peerTable.localPeerId;
+            const bIsSelf = b.isSelf || b.peerId === this.peerTable.localPeerId;
+            if (aIsSelf !== bIsSelf) {
+                return aIsSelf ? 1 : -1; // external peers first
+            }
+
             return (
                 Number(b.freeMemoryGB || 0) -
                 Number(a.freeMemoryGB || 0)
